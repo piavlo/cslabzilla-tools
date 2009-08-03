@@ -1,0 +1,280 @@
+#!/bin/bash
+
+# TODO
+# 1) Add check that the device partitions are not mounted before cloning
+
+PRETEND=0
+if [ "X${1}" == "X--pretend" ]; then
+	PRETEND=1
+	shift
+fi
+
+case $1 in
+	--overwrite-mode)
+		mode=overwrite
+		shift
+		;;
+	--backup-mode)
+		mode=backup
+		shift
+		;;
+	--delete-mode)
+		mode=delete
+		shift
+		;;
+	--missing-mode)
+		mode=missing
+		shift
+		;;
+	*)
+		mode=overwrite
+		;;
+esac
+
+if [ $# != 3 ]; then
+	echo "	Error: ./$(basename $0) [--pretend] [--missing-mode|--overwrite-mode|--backup-mode|--delete-mode] disk profile imagename" && exit 1
+fi
+
+check_prog() {
+        which $1 2>&1 > /dev/null
+        if [ $? != 0 ]; then
+                echo "  Error: essential command $1 not found" && exit 1
+        fi
+}
+check_prog vgchange
+check_prog pvscan
+check_prog lvscan
+check_prog fdisk
+check_prog sfdisk
+check_prog dd
+check_prog ntfsclone
+check_prog partclone.extfs
+
+disk=$1
+prefix=/cslab/images
+profile=${prefix}/etc/profile/$2
+layout=${profile}/layout
+imagename=$3
+
+if [ ! -b $disk ] || [ ! -d /sys/block/$(echo $disk | sed -e 's#^/dev/##') ] ; then
+	echo "	Error: $disk is not disk device" && exit 1
+fi
+
+if [ ! -e $layout ]; then
+	echo "	Error: layout file $layout does not exists" && exit 1
+fi
+
+control_c (){
+        echo
+        echo "	Warning: Got ctrl-C - exiting ..."
+	echo "	Deleting unfinished ${image}.${type}"
+	rm -f ${image}.${type}
+}
+
+partclone_ntfs() {
+	local dev=$1
+	local image=$2
+	local type=$3
+
+	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type} ]; then
+		echo "	Info: skipping $dev due to already existing image ${image}.${type}"
+		return 0
+	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type} ]; then
+		echo "	Info: deleting already existing image ${image}.${type}"
+		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
+	fi
+
+	ntfslabel $dev > /dev/null 2>&1
+	if [ $? != 0 ]; then
+		echo "	Error: The device $dev does not contain NTFS filesystem" && exit 1
+	fi
+	
+	trap control_c SIGINT
+
+	echo "	Running: ntfsclone --save-image --output ${image}.${type} $dev"
+	[ $PRETEND -eq 1 ] || time ntfsclone --save-image --output ${image}.${type} $dev
+	if [ $? != 0 ]; then
+		echo "	Deleting unfinished ${image}.${type}"
+		rm -f ${image}.${type}
+		echo "	Running: ntfsclone --save-image --output ${image}.${type} $dev - FAILED"
+		exit 1
+	else
+		echo "	Running: ntfsclone --save-image --output ${image}.${type} $dev - OK"
+	fi
+}
+
+partclone_extfs() {
+	local dev=$1
+	local image=$2
+	local type=$3
+
+	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type} ]; then
+		echo "	Info: skipping $dev due to already existing image ${image}.${type}"
+		return 0
+	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type} ]; then
+		echo "	Info: deleting already existing image ${image}.${type}"
+		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
+	fi
+	
+	e2label $dev > /dev/null 2>&1
+	if [ $? != 0 ]; then
+		echo "	Error: The device $dev does not contain extfs filesystem" && exit 1
+	fi
+
+	trap control_c SIGINT
+
+	echo "	Running: partclone.extfs -c -d -s $dev -o ${image}.${type}"
+	[ $PRETEND -eq 1 ] || time partclone.extfs -c -d -s $dev -o ${image}.${type}
+	if [ $? != 0 ]; then
+		echo "	Deleting unfinished ${image}.${type}"
+		rm -f ${image}.${type}
+		echo "	Running: partclone.extfs -c -d -s $dev -o ${image}.${type} - FAILED"
+		exit 1
+	else
+		echo "	Running: partclone.extfs -c -d -s $dev -o ${image}.${type} - OK"
+	fi
+}
+
+lvm2image() {
+	local type
+	local pv=$1
+	local vg=$2
+
+	touch ${profile}/partitions/${disksize}.lvm
+
+	pvscan  | egrep -e 'PV[[:space:]]+'${pv}'[[:space:]]+VG[[:space:]]+'${vg}'[[:space:]]+' >& /dev/null
+	if [ $? != 0 ]; then
+		echo "	Error: The disk $disk does not contain a volume group $vg"
+		echo "		While $vg is defined in the layout file $layout" && exit 1
+	fi
+	echo "	Running: vgchange -ay $vg"
+	vgchange -ay $vg
+	if [ $? != 0 ]; then
+		echo "	Error: failed to activate $vg volume group devices" && exit 1
+	fi
+	mkdir -p ${prefix}/data/${imagename}/${vg}
+	for conf in $(cat $layout | egrep -e '^/dev/'${vg}'/'); do
+		lvm=$(echo $conf | awk -F':' '{print $1}')
+		lvscan | egrep -e "^[[:space:]]+ACTIVE[[:space:]]+'${lvm}'" > /dev/null
+		if [ $? != 0 ]; then
+			echo "	Error: Volume group $vg does contain lvm $lvm"
+			echo "	       While $lvm is defined in the layout file $layout" && exit 1
+		fi
+		name=$(echo $conf | awk -F':' '{print $2}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+		fi
+		type=$(echo $conf | awk -F':' '{print $3}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+		fi
+		size=$(echo $conf | awk -F':' '{print $4}')
+		if [ "X${size}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem size" && exit 1
+		fi
+		case $type in
+			ext3)
+				flag=$(echo $conf | awk -F':' '{print $5}')
+				if [ "X${flag}" != "Xskip" ]; then
+					partclone_extfs $lvm ${prefix}/data/${imagename}/${vg}/${name} $type
+				else
+					echo "	Info: Skipping $name on lvm $lvm"
+				fi
+				;;
+			swap)
+				echo "	Info: Skipping swap on lvm $lvm"
+				;;
+			*)
+				echo "	Error: unsupported type $type" && exit 1
+				;;
+		esac
+		tmpsize=$(cat ${profile}/partitions/${disksize}.lvm | awk -F':' '$1 ~ /^'${name}'$/ {print $2}')
+		[ "X${tmpsize}" != "X" ] && size=$tmpsize
+		cat ${profile}/partitions/${disksize}.lvm | egrep -e '^'${name}':' >& /dev/null
+		if [ $? == 0 ]; then
+			sed -i -e 's#^'${name}':.*$#'${name}':'${size}'#' ${profile}/partitions/${disksize}.lvm
+                else
+                        echo ${name}:${size} >> ${profile}/partitions/${disksize}.lvm
+                fi
+	done
+}
+
+disksize=$(fdisk -ul $disk | egrep -e '^Disk[[:space:]]+'${disk}':' | awk '{print $(NF-1)}')
+if [ "X${disksize}" == "X" ]; then
+	echo "	Error: could not determine $disk disk size" && exit 1
+fi
+[ $PRETEND -eq 1 ] || mkdir -p ${profile}/partitions
+[ $PRETEND -eq 1 ] || sfdisk -d $disk 2> /dev/null > ${profile}/partitions/${disksize}
+
+if [ "X${mode}" == "Xbackup" ] && [ -e ${prefix}/data/${imagename} ]; then
+	echo "	Running: mv ${prefix}/data/${imagename} ${prefix}/data/${imagename}-bkup-$(date +%y-%m-%H:%M:%S)"
+	[ $PRETEND -eq 1 ] || mv ${prefix}/data/${imagename} ${prefix}/data/${imagename}-$(date +%y-%m-%H:%M:%S)
+	if [ $? != 0 ]; then
+		echo "	Error: Failed to backup the previous image ${imagename}" && exit 1
+	fi
+elif [ "X${mode}" == "Xdelete" ] && [ -e ${prefix}/data/${imagename} ]; then
+	echo "	Running: rm -rf ${prefix}/data/${imagename}"
+	[ $PRETEND -eq 1 ] || rm -rf ${prefix}/data/${imagename}
+	if [ $? != 0 ]; then
+		echo "	Error: Failed to delete previous image data at ${prefix}/data/${imagename}" && exit 1
+	fi
+fi
+
+[ $PRETEND -eq 1 ] || mkdir -p ${prefix}/data/${imagename}
+
+if [ "X${mode}" == "Xmissing" ] && [ -e ${prefix}/data/${imagename}/MBR ]; then
+	echo "	Info: skipping MBR cloning"
+else
+	if [ "X${mode}" == "Xoverwrite" ] && [ -e ${prefix}/data/${imagename}/MBR ]; then
+		echo "	Info: deleting already existing MBR ${prefix}/data/${imagename}/MBR"
+		[ $PRETEND -eq 1 ] || rm -f ${prefix}/data/${imagename}/MBR
+	fi
+	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512"
+	[ $PRETEND -eq 1 ] || dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512
+	if [ $? != 0 ]; then
+	        echo "  Error: copying partition table from $disk to ${prefix}/data/${imagename}/MBR failed" && exit 1
+	fi
+fi
+
+for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk}'[[:digit:]]'); do
+	part=$(echo $conf | awk -F':' '{print $1}')
+	sfdisk -d $disk 2> /dev/null | egrep -e '^'${part}'' > /dev/null
+	if [ $? != 0 ]; then
+		echo "	Error: $part defined in layout file $layout but does not exis on disk $disk" && exit 1
+	fi
+	name=$(echo $conf | awk -F':' '{print $2}')
+	if [ "X${name}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+	fi
+	type=$(echo $conf | awk -F':' '{print $3}')
+	if [ "X${type}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+	fi
+	case $type in
+		ext3)
+			flag=$(echo $conf | awk -F':' '{print $5}')
+			if [ "X${flag}" != "Xskip" ]; then
+				partclone_extfs $part ${prefix}/data/${imagename}/${name} $type
+			else
+				echo "	Info: Skipping ext3 on partition $part"
+			fi
+			;;
+		ntfs)
+			flag=$(echo $conf | awk -F':' '{print $5}')
+			if [ "X${flag}" != "Xskip" ]; then
+				partclone_ntfs $part ${prefix}/data/${imagename}/${name} $type
+			else
+				echo "	Info: Skipping ntfs on partition $part"
+			fi
+			;;
+		lvm)
+			lvm2image $part $name
+			;;
+		swap)
+			echo "	Info: Skipping swap on partition $part"
+			;;
+		*)
+			echo "	Error: unsupported type $type" && exit 1
+			;;
+	esac
+done

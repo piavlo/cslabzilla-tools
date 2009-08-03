@@ -1,0 +1,371 @@
+#!/bin/bash
+
+# TODO
+# 1) Add check that the device partitions are not mounted before cloning
+
+PRETEND=0
+if [ "X${1}" == "X--pretend" ]; then
+	PRETEND=1
+	shift
+fi
+
+CONTINUE=0
+if [ "X${1}" == "X--continue" ]; then
+	CONTINUE=1
+	shift
+fi
+
+if [ $# != 3 ]; then
+	echo "	Error: ./$(basename $0) [--pretend] [--continue] disk profile imagename" && exit 1
+fi
+
+check_prog() {
+        which $1 2>&1 > /dev/null
+        if [ $? != 0 ]; then
+                echo "  Error: essential command $1 not found" && exit 1
+        fi
+}
+check_prog vgchange
+check_prog pvscan
+check_prog lvscan
+check_prog fdisk
+check_prog sfdisk
+check_prog dd
+check_prog ntfsclone
+check_prog partclone.extfs
+
+disk=$1
+prefix=/cslab/images
+profile=${prefix}/etc/profile/$2
+layout=${profile}/layout
+imagename=$3
+
+if [ ! -e ${prefix}/data/${imagename} ]; then
+	echo "	Error: image directory ${prefix}/data/${imagename} does not exists" && exit 1
+fi
+
+if [ ! -b $disk ] || [ ! -d /sys/block/$(echo $disk | sed -e 's#^/dev/##') ] ; then
+	echo "	Error: $disk is not disk device" && exit 1
+fi
+
+if [ ! -e $layout ]; then
+	echo "	Error: layout file $layout does not exists" && exit 1
+fi
+
+control_c (){
+        echo
+        echo "	Warning: Got ctrl-C - exiting ..."
+}
+
+make_fs() {
+	local dev=$1
+	local label=$2
+	local type=$3
+	local statedir=$4
+
+	if [ -e ${statedir}/${label}.${type} ]; then
+		echo "	Info: Skipping $dev due to existsing ${statedir}/${label}.${type} state file"
+		return 0
+	fi
+
+	echo "	Running: mkfs.${type} -L $label $dev"
+	[ $PRETEND -eq 1 ] || mkfs.${type} -L $label $dev
+	if [ $? != 0 ]; then
+		echo "	Running: mkfs.${type} -L $label $dev - FAILED" && exit 1
+	else
+		echo "	Running: mkfs.${type} -L $label $dev - OK"
+		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
+	fi
+}
+
+partclone_ntfs() {
+	local dev=$1
+	local image=$2
+	local label=$3
+	local type=$4
+	local statedir=$5
+
+	if [ ! -e ${image}.${type} ]; then
+		echo "	Error: Image file ${image}.${type} does not exists" && exit 1
+	fi
+
+	if [ -e ${statedir}/${label}.${type} ]; then
+		echo "	Info: Skipping $dev due to existsing ${statedir}/${label}.${type} state file"
+		return 0
+	fi
+
+	trap control_c SIGINT
+
+	echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev"
+	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type} id=0,dest=$dev
+	if [ $? != 0 ]; then
+		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - FAILED"
+		exit 1
+	else
+		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - OK"
+		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
+	fi
+
+	echo "	Running: ntfslabel $dev $label"
+	[ $PRETEND -eq 1 ] || ntfslabel $dev $label
+	if [ $? != 0 ]; then
+		echo "	Error: Failed to set ntfs label on $dev" && exit 1
+	fi
+}
+
+partclone_extfs() {
+	local dev=$1
+	local image=$2
+	local label=$3
+	local type=$4
+	local statedir=$5
+
+	if [ ! -e ${image}.${type} ]; then
+		echo "	Error: Image file ${image}.${type} does not exists" && exit 1
+	fi
+
+	if [ -e ${statedir}/${label}.${type} ]; then
+		echo "	Info: Skipping $dev due to existsing ${statedir}/${label}.${type} state file"
+		return 0
+	fi
+
+	trap control_c SIGINT
+
+	echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev"
+	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type} id=0,dest=$dev
+	if [ $? != 0 ]; then
+		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - FAILED"
+		exit 1
+	else
+		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - OK"
+		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
+	fi
+
+	echo "	Running: e2label $dev $label"
+	[ $PRETEND -eq 1 ] || e2label $dev $label
+	if [ $? != 0 ]; then
+		echo "	Error: Failed to set extfs label on $dev" && exit 1
+	fi
+}
+
+make_swap() {
+	local dev=$1
+	echo "	Running: mkswap $dev"
+	[ $PRETEND -eq 1 ] || mkswap $dev
+	if [ $? != 0 ]; then
+		echo "	Running: mkswap $dev - FAILED" && exit 1
+	else
+		echo "	Running: mkswap $dev - OK"
+	fi
+}
+
+lvmdestroy() {
+	local disk=$1
+
+	for pv in $(pvs | egrep -e '^[[:space:]]+'${disk}'[[:digit:]]' | awk '{print $1}'); do
+		vg=$(pvs | egrep -e '^[[:space:]]+'${pv}'[[:space:]]' | awk '{print $2}')
+		if [ "$vg" == "lvm2" ]; then
+			echo "	Running: pvremove --force $pv"
+			[ $PRETEND -eq 1 ] || pvremove --force $pv
+			if [ $? != 0 ]; then
+				echo "	Error: failed to remove PV $pv" && exit 1
+	       		fi
+			continue
+		fi
+		echo "	Running: vgchange -an $vg"
+	        [ $PRETEND -eq 1 ] || vgchange -an $vg
+	        if [ $? != 0 ]; then
+	                echo "	Error: failed to deactivate $vg volume group devices" && exit 1
+	        fi
+		echo "	Running: vgremove --force $vg"
+		[ $PRETEND -eq 1 ] || vgremove --force $vg
+		if [ $? != 0 ]; then
+			echo "	Error: failed to remove $vg volume group" && exit 1
+	        fi
+		echo "	Running: pvremove --force $pv"
+		[ $PRETEND -eq 1 ] || pvremove --force $pv
+		if [ $? != 0 ]; then
+			echo "	Error: failed to disable $pv as physical device" && exit 1
+	        fi
+	done
+}
+
+lvm2disk() {
+	local type
+	local pv=$1
+	local vg=$2
+
+	touch ${profile}/partitions/${disksize}.lvm
+
+	[ $CONTINUE -eq 0 ] && pvscan | egrep -e 'PV[[:space:]]+.*[[:space:]]+VG[[:space:]]+'${vg}'[[:space:]]+' >& /dev/null
+	if [ $? == 0 ] && [ $PRETEND -ne 1 ]; then
+		echo "	Error: volume group with name $vg already exists and device $pv does not belong to this group"
+		exit 1
+	fi
+
+	if [ ! -d ${statedir}/${vg} ]; then
+		echo "	Running: pvcreate $pv"
+		[ $PRETEND -eq 1 ] || pvcreate $pv
+		if [ $? != 0 ]; then
+			echo "	Error: failed to initialize $pv as physical volume" && exit 1
+	        fi
+		echo "	Running: vgcreate $vg $pv"
+		[ $PRETEND -eq 1 ] || vgcreate $vg $pv
+		if [ $? != 0 ]; then
+			echo "	Error: failed to create volume group $vg with physical volume $pv" && exit 1
+	        fi
+	fi
+	mkdir -p ${statedir}/${vg}
+
+	for conf in $(cat $layout | egrep -e '^/dev/'${vg}'/'); do
+		lvm=$(echo $conf | awk -F':' '{print $1}')
+		name=$(echo $conf | awk -F':' '{print $2}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+		fi
+		type=$(echo $conf | awk -F':' '{print $3}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+		fi
+		size=$(echo $conf | awk -F':' '{print $4}')
+		if [ "X${size}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem size" && exit 1
+		fi
+		if [ -e /dev/${vg}/${name} ]; then
+			if [ $CONTINUE -eq 0 ] && [ $PRETEND -eq 0 ]; then
+				echo "	Error: lvm $lvm already exists" && exit 1
+			fi
+		else
+			tmpsize=$(cat ${profile}/partitions/${disksize}.lvm | awk -F':' '$1 ~ /^'${name}'$/ {print $2}')
+			[ "X${tmpsize}" != "X" ] && size=$tmpsize
+
+			echo "	Running: lvcreate -L${size} -n $(basename $lvm) $vg"
+			[ $PRETEND -eq 1 ] || lvcreate -L${size} -n $(basename $lvm) $vg
+			if [ $? != 0 ]; then
+				echo "	Error: failed to create lvm $lvm" && exit 1
+			fi
+		fi
+		case $type in
+			ext3)
+				flag=$(echo $conf | awk -F':' '{print $5}')
+				if [ "X${flag}" == "Xskip" ]; then
+					make_fs $part $lvm $type ${statedir}/${vg}
+				else
+					partclone_extfs $lvm ${prefix}/data/${imagename}/${vg}/${name} $name $type ${statedir}/${vg}
+				fi
+				;;
+			swap)
+				make_swap $lvm
+				;;
+			*)
+				echo "	Error: unsupported type $type" && exit 1
+				;;
+		esac
+		cat ${profile}/partitions/${disksize}.lvm | egrep -e '^'${name}':' >& /dev/null
+		if [ $? == 0 ]; then
+			sed -i -e 's#^'${name}':.*$#'${name}':'${size}'#' ${profile}/partitions/${disksize}.lvm
+		else
+			echo ${name}:${size} >> ${profile}/partitions/${disksize}.lvm
+		fi
+	done
+}
+
+statedir=/tmp/$(basename $0)/${disk}
+
+if [ $CONTINUE -eq 1 ] && [ -L ${statedir}/image ]; then
+	if [ "X$(ls -l ${statedir}/image | awk '{print $NF}')" != "X${prefix}/data/${imagename}" ]; then
+		echo $(ls -l ${statedir}/image | awk '{print $NF}')
+		echo ${prefix}/data/${imagename}
+		echo "	Error: Can't run with --continue since the statedir is for other image type" && exit 1
+	fi
+else
+	lvmdestroy $disk
+
+	echo "	Running: rm -rf $statedir"
+	rm -rf $statedir
+	if [ $? == 0 ]; then
+		echo "	Running: rm -rf $statedir - OK"
+	else
+		echo "	Running: rm -rf $statedir - FAILED"
+	fi
+
+	mkdir -p ${statedir}
+	[ $PRETEND -eq 1 ] || ln -snf ${prefix}/data/${imagename} ${statedir}/image
+fi
+
+if [ -e ${statedir}/MBR ]; then
+	echo "	Info: skiping MBR restore"
+else
+	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512"
+	[ $PRETEND -eq 1 ] || dd if=${prefix}/data/${imagename}/MBR of=$disk count=61 bs=512
+	if [ $? != 0 ]; then
+		echo "	Error: copying partition table to $disk from ${prefix}/data/${imagename}/MBR failed" && exit 1
+	else
+		[ $PRETEND -eq 1 ] || touch ${statedir}/MBR
+	fi
+fi
+
+disksize=$(fdisk -ul $disk | egrep -e '^Disk[[:space:]]+'${disk}':' | awk '{print $(NF-1)}')
+if [ "X${disksize}" == "X" ]; then
+	echo "	Error: could not determine $disk disk size" && exit 1
+fi
+if [ ! -e ${profile}/partitions/${disksize} ]; then
+	echo "	Error: partition table sfdisk config ${profile}/partitions/${disksize} does not exists" && exit 1
+fi
+if [ -e ${statedir}/sfdisk ]; then
+	echo "	Info: skiping sfdisk"
+else
+	echo "	Running: cat ${profile}/partitions/${disksize} | sfdisk --force $disk"
+	[ $PRETEND -eq 1 ] || cat ${profile}/partitions/${disksize} | sfdisk --force $disk
+	if [ $? != 0 ]; then
+		echo "	Running: cat ${profile}/partitions/${disksize} | sfdisk --force $disk - FAILED"
+		exit 1
+	else
+		echo "	Running: cat ${profile}/partitions/${disksize} | sfdisk --force $disk - OK"
+		[ $PRETEND -eq 1 ] || touch ${statedir}/sfdisk
+	fi
+fi
+
+for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk}'[[:digit:]]'); do
+	part=$(echo $conf | awk -F':' '{print $1}')
+	sfdisk -d $disk 2> /dev/null | egrep -e '^'${part}'' > /dev/null
+	if [ $? != 0 ]; then
+		echo "	Error: $part defined in layout file $layout but does not exis on disk $disk"
+		echo "		check the ${profile}/partitions/${disksize} file" && exit 1
+	fi
+	name=$(echo $conf | awk -F':' '{print $2}')
+	if [ "X${name}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+	fi
+	type=$(echo $conf | awk -F':' '{print $3}')
+	if [ "X${type}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+	fi
+	case $type in
+		ext3)
+			flag=$(echo $conf | awk -F':' '{print $5}')
+			if [ "X${flag}" == "Xskip" ]; then
+				make_fs $part $name $type $statedir
+			else
+				partclone_extfs $part ${prefix}/data/${imagename}/${name} $name $type $statedir
+			fi
+			;;
+		ntfs)
+			flag=$(echo $conf | awk -F':' '{print $5}')
+			if [ "X${flag}" == "Xskip" ]; then
+				make_fs $part $name $type $statedir
+			else
+				partclone_ntfs $part ${prefix}/data/${imagename}/${name} $name $type $statedir
+			fi
+			;;
+		lvm)
+			lvm2disk $part $name
+			;;
+		swap)
+			make_swap $part
+			;;
+		*)
+			echo "	Error: unsupported type $type" && exit 1
+			;;
+	esac
+done

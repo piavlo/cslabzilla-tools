@@ -1,0 +1,172 @@
+#!/bin/bash
+
+# TODO
+# 1) Add check that the device partitions are not mounted before cloning
+
+if [ $# -lt 2 ]; then
+	echo "	Error: ./$(basename $0) disk profile [chroot-command]" && exit 1
+fi
+
+check_prog() {
+        which $1 2>&1 > /dev/null
+        if [ $? != 0 ]; then
+                echo "  Error: essential command $1 not found" && exit 1
+        fi
+}
+check_prog vgchange
+check_prog pvscan
+check_prog lvscan
+check_prog fdisk
+check_prog sort
+
+disk=$1
+prefix=/cslab/images
+profile=${prefix}/etc/profile/$2
+layout=${profile}/layout
+
+shift;shift
+
+if [ ! -e ${prefix}/data/${imagename} ]; then
+	echo "	Error: image directory ${prefix}/data/${imagename} does not exists" && exit 1
+fi
+
+if [ ! -b $disk ] || [ ! -d /sys/block/$(echo $disk | sed -e 's#^/dev/##') ] ; then
+	echo "	Error: $disk is not disk device" && exit 1
+fi
+
+if [ ! -e $layout ]; then
+	echo "	Error: layout file $layout does not exists" && exit 1
+fi
+
+control_c (){
+        echo
+        echo "	Warning: Got ctrl-C - exiting ..."
+}
+
+label2mountpoint() {
+	local label=$1
+
+	mapping="
+	root:/
+	boot:/boot
+	usr:/usr
+	usr_local:/usr/local
+	var:/var
+	tmp:/tmp
+	opt:/opt
+	home:/home
+	"
+
+	echo $mapping | tr -s '[:space:]' '\n' | awk -F':' '$1 ~ /^'${label}'$/ {print "/mnt/gentoo"$2}'
+}
+
+lvm2disk() {
+	local type
+	local pv=$1
+	local vg=$2
+
+	pvscan  | egrep -e 'PV[[:space:]]+'${pv}'[[:space:]]+VG[[:space:]]+'${vg}'[[:space:]]+' >& /dev/null
+        if [ $? != 0 ]; then
+                echo "  Error: The disk $disk does not contain a volume group $vg"
+                echo "          While $vg is defined in the layout file $layout" && exit 1
+        fi
+        echo "	Running: vgchange -ay $vg"
+        vgchange -ay $vg
+        if [ $? != 0 ]; then
+                echo "  Error: failed to activate $vg volume group devices" && exit 1
+        fi
+
+	for conf in $(cat $layout | egrep -e '^/dev/'${vg}'/'); do
+		lvm=$(echo $conf | awk -F':' '{print $1}')
+		name=$(echo $conf | awk -F':' '{print $2}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+		fi
+		type=$(echo $conf | awk -F':' '{print $3}')
+		if [ "X${name}" == "X" ]; then
+			echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+		fi
+		case $type in
+			ext3)
+				mounts="${mounts} ${lvm}:$(label2mountpoint $name):${type}"
+				;;
+			swap)
+				echo -n
+				;;
+			*)
+				echo "	Error: unsupported type $type" && exit 1
+				;;
+		esac
+	done
+}
+
+
+mounts=""
+
+for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk}'[[:digit:]]'); do
+	part=$(echo $conf | awk -F':' '{print $1}')
+	sfdisk -d $disk 2> /dev/null | egrep -e '^'${part}'' > /dev/null
+	if [ $? != 0 ]; then
+		echo "	Error: $part defined in layout file $layout but does not exis on disk $disk" && exit 1
+	fi
+	name=$(echo $conf | awk -F':' '{print $2}')
+	if [ "X${name}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem name" && exit 1
+	fi
+	type=$(echo $conf | awk -F':' '{print $3}')
+	if [ "X${type}" == "X" ]; then
+		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
+	fi
+	case $type in
+		ext3)
+			mounts="${mounts} ${part}:$(label2mountpoint $name):${type}"
+			;;
+		lvm)
+			lvm2disk $part $name
+			;;
+		swap|ntfs)
+			echo -n
+			;;
+		*)
+			echo "	Error: unsupported type $type" && exit 1
+			;;
+	esac
+done
+
+for conf in $(echo $mounts | tr -s '[:space:]' '\n' | sort -t':' -k2); do
+	dev=$(echo $conf | awk -F':' '{print $1}')
+	mp=$(echo $conf | awk -F':' '{print $2}')
+	type=$(echo $conf | awk -F':' '{print $3}')
+
+	mkdir -p $mp
+
+	echo "	Running: mount -t $type $dev $mp"
+	mount -t $type $dev $mp
+	if [ $? != 0 ]; then
+		echo "	Running: mount -t $type $dev $mp - FAILED" && exit 1
+	else
+		echo "	Running: mount -t $type $dev $mp - OK"
+	fi
+done
+
+mount -o bind /dev /mnt/gentoo/dev
+mount -o bind /proc /mnt/gentoo/proc
+mount -o bind /sys /mnt/gentoo/sys
+
+chroot /mnt/gentoo $*
+
+umount /mnt/gentoo/dev
+umount /mnt/gentoo/proc
+umount /mnt/gentoo/sys
+
+for conf in $(echo $mounts | tr -s '[:space:]' '\n' | sort -r -t':' -k2); do
+	mp=$(echo $conf | awk -F':' '{print $2}')
+
+	echo "	Running: umount $mp"
+	umount $mp
+	if [ $? != 0 ]; then
+		echo "	Running: umount $mp - FAILED" && exit 1
+	else
+		echo "	Running: umount $mp - OK"
+	fi
+done
