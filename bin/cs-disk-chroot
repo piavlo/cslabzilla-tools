@@ -66,15 +66,15 @@ lvm2disk() {
 	local vg=$2
 
 	pvscan  | egrep -e 'PV[[:space:]]+'${pv}'[[:space:]]+VG[[:space:]]+'${vg}'[[:space:]]+' >& /dev/null
-        if [ $? != 0 ]; then
-                echo "  Error: The disk $disk does not contain a volume group $vg"
-                echo "          While $vg is defined in the layout file $layout" && exit 1
-        fi
-        echo "	Running: vgchange -ay $vg"
-        vgchange -ay $vg
-        if [ $? != 0 ]; then
-                echo "  Error: failed to activate $vg volume group devices" && exit 1
-        fi
+	if [ $? != 0 ]; then
+		echo "  Error: The disk $disk does not contain a volume group $vg"
+		echo "          While $vg is defined in the layout file $layout" && exit 1
+	fi
+	echo "	Running: vgchange -ay $vg"
+	vgchange -ay $vg
+	if [ $? != 0 ]; then
+	echo "  Error: failed to activate $vg volume group devices" && exit 1
+	fi
 
 	for conf in $(cat $layout | egrep -e '^/dev/'${vg}'/'); do
 		lvm=$(echo $conf | awk -F':' '{print $1}')
