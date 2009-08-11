@@ -3,12 +3,16 @@
 # TODO
 # 1) Add check that the device partitions are not mounted before cloning
 
+LOCAL_MBR=0
+if [ "X${1}" == "X--local-mbr" ]; then
+	LOCAL_MBR=1
+	shift
+fi
 PRETEND=0
 if [ "X${1}" == "X--pretend" ]; then
 	PRETEND=1
 	shift
 fi
-
 CONTINUE=0
 if [ "X${1}" == "X--continue" ]; then
 	CONTINUE=1
@@ -16,7 +20,7 @@ if [ "X${1}" == "X--continue" ]; then
 fi
 
 if [ $# != 3 ]; then
-	echo "	Error: ./$(basename $0) [--pretend] [--continue] disk profile imagename" && exit 1
+	echo "	Error: ./$(basename $0) [--local-mbr] [--pretend] [--continue] disk profile imagename" && exit 1
 fi
 
 check_prog() {
@@ -308,6 +312,13 @@ fi
 disksize=$(fdisk -ul $disk | egrep -e '^Disk[[:space:]]+'${disk}':' | awk '{print $(NF-1)}')
 if [ "X${disksize}" == "X" ]; then
 	echo "	Error: could not determine $disk disk size" && exit 1
+fi
+
+if [ $LOCAL_MBR -eq 1 ] ; then
+	if [ ! -e ${profile}/partitions/${disksize} ]; then
+		sfdisk -d $disk > ${profile}/partitions/${disksize}
+	fi
+	touch ${statedir}/sfdisk
 fi
 if [ ! -e ${profile}/partitions/${disksize} ]; then
 	echo "	Error: partition table sfdisk config ${profile}/partitions/${disksize} does not exists" && exit 1
