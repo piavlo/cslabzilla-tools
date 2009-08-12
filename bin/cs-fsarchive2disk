@@ -3,6 +3,16 @@
 # TODO
 # 1) Add check that the device partitions are not mounted before cloning
 
+if [ "$(pwd)" == "$(dirname $0)" ]; then
+        prefix="$(dirname $0)"
+else
+        prefix="$(pwd)/$(dirname $0)"
+        pushd $prefix > /dev/null
+        prefix="$(pwd)"
+        popd > /dev/null
+fi
+prefix="$(dirname $prefix)"
+
 LOCAL_MBR=0
 if [ "X${1}" == "X--local-mbr" ]; then
 	LOCAL_MBR=1
@@ -39,7 +49,6 @@ check_prog ntfsclone
 check_prog partclone.extfs
 
 disk=$1
-prefix=/cslab/images
 profile=${prefix}/etc/profile/$2
 layout=${profile}/layout
 imagename=$3
