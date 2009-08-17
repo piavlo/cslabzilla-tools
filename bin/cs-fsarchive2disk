@@ -363,7 +363,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 	fi
 	case $type in
 		ext3)
-			flag=$(echo $conf | awk -F':' '{print $5}')
+			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" == "Xskip" ]; then
 				make_fs $part $name $type $statedir
 			else
@@ -371,7 +371,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 			fi
 			;;
 		ntfs)
-			flag=$(echo $conf | awk -F':' '{print $5}')
+			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" == "Xskip" ]; then
 				make_fs $part $name $type $statedir
 			else

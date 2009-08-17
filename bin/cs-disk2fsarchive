@@ -101,7 +101,7 @@ partclone_ntfs() {
 	trap control_c SIGINT
 
 	echo "	Running: fsarchiver -o savefs ${image}.${type} $dev"
-	[ $PRETEND -eq 1 ] || time fsarchiver -z 1 -o savefs ${image}.${type} $dev
+	[ $PRETEND -eq 1 ] || time fsarchiver -o savefs ${image}.${type} $dev
 	if [ $? != 0 ]; then
 		echo "	Deleting unfinished ${image}.${type}"
 		rm -f ${image}.${type}.fsa
@@ -263,7 +263,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 	fi
 	case $type in
 		ext3)
-			flag=$(echo $conf | awk -F':' '{print $5}')
+			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" != "Xskip" ]; then
 				partclone_extfs $part ${prefix}/data/${imagename}/${name} $type
 			else
@@ -271,7 +271,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 			fi
 			;;
 		ntfs)
-			flag=$(echo $conf | awk -F':' '{print $5}')
+			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" != "Xskip" ]; then
 				partclone_ntfs $part ${prefix}/data/${imagename}/${name} $type
 			else
