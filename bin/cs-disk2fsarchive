@@ -240,8 +240,8 @@ else
 		echo "	Info: deleting already existing MBR ${prefix}/data/${imagename}/MBR"
 		[ $PRETEND -eq 1 ] || rm -f ${prefix}/data/${imagename}/MBR
 	fi
-	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512"
-	[ $PRETEND -eq 1 ] || dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512
+	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=63 bs=512"
+	[ $PRETEND -eq 1 ] || dd if=$disk of=${prefix}/data/${imagename}/MBR count=63 bs=512
 	if [ $? != 0 ]; then
 	        echo "  Error: copying partition table from $disk to ${prefix}/data/${imagename}/MBR failed" && exit 1
 	fi

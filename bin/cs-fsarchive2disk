@@ -309,8 +309,8 @@ fi
 if [ -e ${statedir}/MBR ]; then
 	echo "	Info: skiping MBR restore"
 else
-	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=61 bs=512"
-	[ $PRETEND -eq 1 ] || dd if=${prefix}/data/${imagename}/MBR of=$disk count=61 bs=512
+	echo "	Running: dd if=$disk of=${prefix}/data/${imagename}/MBR count=63 bs=512"
+	[ $PRETEND -eq 1 ] || dd if=${prefix}/data/${imagename}/MBR of=$disk count=63 bs=512
 	if [ $? != 0 ]; then
 		echo "	Error: copying partition table to $disk from ${prefix}/data/${imagename}/MBR failed" && exit 1
 	else
