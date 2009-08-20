@@ -40,6 +40,7 @@ check_prog() {
                 echo "  Error: essential command $1 not found" && exit 1
         fi
 }
+check_prog blkid
 check_prog vgchange
 check_prog pvscan
 check_prog lvscan
@@ -145,13 +146,13 @@ partclone_extfs() {
 
 	trap control_c SIGINT
 
-	echo "	Running: partclone.extfs -r -d -s ${image}.${type} -o $dev"
-	[ $PRETEND -eq 1 ] || time partclone.extfs -r -d -s ${image}.${type} -o $dev
+	echo "	Running: partclone.${type} -r -d -s ${image}.${type} -o $dev"
+	[ $PRETEND -eq 1 ] || time partclone.${type} -r -d -s ${image}.${type} -o $dev
 	if [ $? != 0 ]; then
-		echo "	Running: partclone.extfs -r -d -s ${image}.${type} -o $dev - FAILED"
+		echo "	Running: partclone.${type} -r -d -s ${image}.${type} -o $dev - FAILED"
 		exit 1
 	else
-		echo "	Running: partclone.extfs -r -d -s ${image}.${type} -o $dev - OK"
+		echo "	Running: partclone.${type} -r -d -s ${image}.${type} -o $dev - OK"
 		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
 	fi
 
@@ -260,7 +261,7 @@ lvm2disk() {
 			fi
 		fi
 		case $type in
-			ext3)
+			ext*)
 				flag=$(echo $conf | awk -F':' '{print $5}')
 				if [ "X${flag}" == "Xskip" ]; then
 					make_fs $part $lvm $type ${statedir}/${vg}
@@ -364,7 +365,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
 	fi
 	case $type in
-		ext3)
+		ext*)
 			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" == "Xskip" ]; then
 				make_fs $part $name $type $statedir

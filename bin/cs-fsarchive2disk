@@ -39,6 +39,7 @@ check_prog() {
                 echo "  Error: essential command $1 not found" && exit 1
         fi
 }
+check_prog blkid
 check_prog vgchange
 check_prog pvscan
 check_prog lvscan
@@ -259,7 +260,7 @@ lvm2disk() {
 			fi
 		fi
 		case $type in
-			ext3)
+			ext*)
 				flag=$(echo $conf | awk -F':' '{print $5}')
 				if [ "X${flag}" == "Xskip" ]; then
 					make_fs $part $lvm $type ${statedir}/${vg}
@@ -362,7 +363,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
 	fi
 	case $type in
-		ext3)
+		ext*)
 			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" == "Xskip" ]; then
 				make_fs $part $name $type $statedir

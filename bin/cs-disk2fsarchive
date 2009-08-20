@@ -94,11 +94,6 @@ partclone_ntfs() {
 		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
 	fi
 
-	ntfslabel $dev > /dev/null 2>&1
-	if [ $? != 0 ]; then
-		echo "	Error: The device $dev does not contain NTFS filesystem" && exit 1
-	fi
-	
 	trap control_c SIGINT
 
 	echo "	Running: fsarchiver -o savefs ${image}.${type} $dev"
@@ -127,11 +122,6 @@ partclone_extfs() {
 		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
 	fi
 	
-	e2label $dev > /dev/null 2>&1
-	if [ $? != 0 ]; then
-		echo "	Error: The device $dev does not contain extfs filesystem" && exit 1
-	fi
-
 	trap control_c SIGINT
 
 	echo "	Running: fsarchiver -o savefs ${image}.${type} $dev"
@@ -184,17 +174,21 @@ lvm2image() {
 		if [ "X${size}" == "X" ]; then
 			echo "	Error: layout line $conf does not contain filesystem size" && exit 1
 		fi
+		ondisk_type="$(blkid -c /dev/null -o value -s TYPE $lvm)"
+                if [ "X${type}" != "X${ondisk_type}" ]; then
+                        echo "  Error: $lvm defined in layout file fstype is $type but $part has fstype $ondisk_type" && exit 1
+                fi
 		case $type in
-			ext3)
+			ext*)
 				flag=$(echo $conf | awk -F':' '{print $5}')
 				if [ "X${flag}" != "Xskip" ]; then
 					partclone_extfs $lvm ${prefix}/data/${imagename}/${vg}/${name} $type
 				else
-					echo "	Info: Skipping $name on lvm $lvm"
+					echo "	Info: Skipping $type on lvm $lvm"
 				fi
 				;;
 			swap)
-				echo "	Info: Skipping swap on lvm $lvm"
+				echo "	Info: Skipping $type on lvm $lvm"
 				;;
 			*)
 				echo "	Error: unsupported type $type" && exit 1
@@ -262,13 +256,17 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 	if [ "X${type}" == "X" ]; then
 		echo "	Error: layout line $conf does not contain filesystem type" && exit 1
 	fi
+	ondisk_type="$(blkid -c /dev/null -o value -s TYPE $part)"
+	if [ "X${type}" != "X${ondisk_type}" ]; then
+		echo "  Error: $part defined in layout file fstype is $type but $part has fstype $ondisk_type" && exit 1
+	fi
 	case $type in
-		ext3)
+		ext*)
 			flag=$(echo $conf | awk -F':' '{print $4}')
 			if [ "X${flag}" != "Xskip" ]; then
 				partclone_extfs $part ${prefix}/data/${imagename}/${name} $type
 			else
-				echo "	Info: Skipping ext3 on partition $part"
+				echo "	Info: Skipping $type on partition $part"
 			fi
 			;;
 		ntfs)
@@ -276,14 +274,14 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 			if [ "X${flag}" != "Xskip" ]; then
 				partclone_ntfs $part ${prefix}/data/${imagename}/${name} $type
 			else
-				echo "	Info: Skipping ntfs on partition $part"
+				echo "	Info: Skipping $type on partition $part"
 			fi
 			;;
 		lvm)
 			lvm2image $part $name
 			;;
 		swap)
-			echo "	Info: Skipping swap on partition $part"
+			echo "	Info: Skipping $type on partition $part"
 			;;
 		*)
 			echo "	Error: unsupported type $type" && exit 1
