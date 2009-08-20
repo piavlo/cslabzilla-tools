@@ -3,7 +3,7 @@
 # TODO
 # 1) Add check that the device partitions are not mounted before cloning
 
-if [ "$(pwd)" == "$(dirname $0)" ]; then
+if [ -e "$0" ] || [ "$(pwd)" == "$(dirname $0)" ]; then
         prefix="$(dirname $0)"
 else
         prefix="$(pwd)/$(dirname $0)"
