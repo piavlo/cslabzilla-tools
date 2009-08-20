@@ -14,25 +14,25 @@ fi
 prefix="$(dirname $prefix)"
 
 PRETEND=0
-if [ "X${1}" == "X--pretend" ]; then
+if [ "X${1}" == "X-p" ] || [ "X${1}" == "X--pretend" ]; then
 	PRETEND=1
 	shift
 fi
 
 case $1 in
-	--overwrite-mode)
+	-o|--overwrite-mode)
 		mode=overwrite
 		shift
 		;;
-	--backup-mode)
+	-b|--backup-mode)
 		mode=backup
 		shift
 		;;
-	--delete-mode)
+	-b|--delete-mode)
 		mode=delete
 		shift
 		;;
-	--missing-mode)
+	-m|--missing-mode)
 		mode=missing
 		shift
 		;;
@@ -42,7 +42,7 @@ case $1 in
 esac
 
 if [ $# != 3 ]; then
-	echo "	Error: ./$(basename $0) [--pretend] [--missing-mode|--overwrite-mode|--backup-mode|--delete-mode] disk profile imagename" && exit 1
+	echo "	Error: $(basename $0) [-p|--pretend] [-m|--missing-mode|-o|--overwrite-mode|-b|--backup-mode|-d|--delete-mode] disk profile imagename" && exit 1
 fi
 
 check_prog() {
@@ -51,6 +51,7 @@ check_prog() {
                 echo "  Error: essential command $1 not found" && exit 1
         fi
 }
+check_prog blkid
 check_prog vgchange
 check_prog pvscan
 check_prog lvscan

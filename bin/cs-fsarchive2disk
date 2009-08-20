@@ -13,24 +13,24 @@ else
 fi
 prefix="$(dirname $prefix)"
 
-LOCAL_MBR=0
-if [ "X${1}" == "X--local-mbr" ]; then
-	LOCAL_MBR=1
-	shift
-fi
 PRETEND=0
-if [ "X${1}" == "X--pretend" ]; then
+if [ "X${1}" == "X-p" ] || [ "X${1}" == "X--pretend" ]; then
 	PRETEND=1
 	shift
 fi
 CONTINUE=0
-if [ "X${1}" == "X--continue" ]; then
+if [ "X${1}" == "X-c" ] || [ "X${1}" == "X--continue" ]; then
 	CONTINUE=1
+	shift
+fi
+LOCAL_MBR=0
+if [ "X${1}" == "X-l" ] || [ "X${1}" == "X--local-mbr" ]; then
+	LOCAL_MBR=1
 	shift
 fi
 
 if [ $# != 3 ]; then
-	echo "	Error: ./$(basename $0) [--local-mbr] [--pretend] [--continue] disk profile imagename" && exit 1
+	echo "	Error: $(basename $0) [-p|--pretend] [-c|--continue] [-l|--local-mbr] disk profile imagename" && exit 1
 fi
 
 check_prog() {
