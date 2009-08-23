@@ -86,12 +86,12 @@ partclone_ntfs() {
 	local image=$2
 	local type=$3
 
-	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type} ]; then
-		echo "	Info: skipping $dev due to already existing image ${image}.${type}"
+	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type}.fsa ]; then
+		echo "	Info: skipping $dev due to already existing image ${image}.${type}.fsa"
 		return 0
-	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type} ]; then
-		echo "	Info: deleting already existing image ${image}.${type}"
-		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
+	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type}.fsa ]; then
+		echo "	Info: deleting already existing image ${image}.${type}.fsa"
+		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}.fsa
 	fi
 
 	trap control_c SIGINT
@@ -99,12 +99,11 @@ partclone_ntfs() {
 	echo "	Running: fsarchiver -o savefs ${image}.${type} $dev"
 	[ $PRETEND -eq 1 ] || time fsarchiver -o savefs ${image}.${type} $dev
 	if [ $? != 0 ]; then
-		echo "	Deleting unfinished ${image}.${type}"
+		echo "	Deleting unfinished ${image}.${type}.fsa"
 		rm -f ${image}.${type}.fsa
 		echo "	Running: fsarchiver -o savefs ${image}.${type} $dev - FAILED"
 		exit 1
 	else
-		[ $PRETEND -eq 1 ] || mv ${image}.${type}.fsa ${image}.${type}
 		echo "	Running: fsarchiver -o savefs ${image}.${type} $dev - OK"
 	fi
 }
@@ -114,12 +113,12 @@ partclone_extfs() {
 	local image=$2
 	local type=$3
 
-	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type} ]; then
-		echo "	Info: skipping $dev due to already existing image ${image}.${type}"
+	if [ "X${mode}" == "Xmissing" ] && [ -e ${image}.${type}.fsa ]; then
+		echo "	Info: skipping $dev due to already existing image ${image}.${type}.fsa"
 		return 0
-	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type} ]; then
-		echo "	Info: deleting already existing image ${image}.${type}"
-		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}
+	elif [ "X${mode}" == "Xoverwrite" ] && [ -e ${image}.${type}.fsa ]; then
+		echo "	Info: deleting already existing image ${image}.${type}.fsa"
+		[ $PRETEND -eq 1 ] || rm -f ${image}.${type}.fsa
 	fi
 	
 	trap control_c SIGINT
@@ -127,12 +126,11 @@ partclone_extfs() {
 	echo "	Running: fsarchiver -o savefs ${image}.${type} $dev"
 	[ $PRETEND -eq 1 ] || time fsarchiver -o savefs ${image}.${type} $dev
 	if [ $? != 0 ]; then
-		echo "	Deleting unfinished ${image}.${type}"
+		echo "	Deleting unfinished ${image}.${type}.fsa"
 		rm -f ${image}.${type}.fsa
 		echo "	Running: fsarchiver -o savefs ${image}.${type} $dev - FAILED"
 		exit 1
 	else
-		[ $PRETEND -eq 1 ] || mv ${image}.${type}.fsa ${image}.${type}
 		echo "	Running: fsarchiver -o savefs ${image}.${type} $dev - OK"
 	fi
 }

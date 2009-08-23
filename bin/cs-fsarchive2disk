@@ -99,8 +99,8 @@ partclone_ntfs() {
 	local type=$4
 	local statedir=$5
 
-	if [ ! -e ${image}.${type} ]; then
-		echo "	Error: Image file ${image}.${type} does not exists" && exit 1
+	if [ ! -e ${image}.${type}.fsa ]; then
+		echo "	Error: Image file ${image}.${type}.fsa does not exists" && exit 1
 	fi
 
 	if [ -e ${statedir}/${label}.${type} ]; then
@@ -110,13 +110,13 @@ partclone_ntfs() {
 
 	trap control_c SIGINT
 
-	echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev"
-	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type} id=0,dest=$dev
+	echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev"
+	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev
 	if [ $? != 0 ]; then
-		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - FAILED"
+		echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev - FAILED"
 		exit 1
 	else
-		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - OK"
+		echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev - OK"
 		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
 	fi
 
@@ -134,7 +134,7 @@ partclone_extfs() {
 	local type=$4
 	local statedir=$5
 
-	if [ ! -e ${image}.${type} ]; then
+	if [ ! -e ${image}.${type}.fsa ]; then
 		echo "	Error: Image file ${image}.${type} does not exists" && exit 1
 	fi
 
@@ -145,13 +145,13 @@ partclone_extfs() {
 
 	trap control_c SIGINT
 
-	echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev"
-	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type} id=0,dest=$dev
+	echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev"
+	[ $PRETEND -eq 1 ] || time fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev
 	if [ $? != 0 ]; then
-		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - FAILED"
+		echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev - FAILED"
 		exit 1
 	else
-		echo "	Running: fsarchiver restfs ${image}.${type} id=0,dest=$dev - OK"
+		echo "	Running: fsarchiver restfs ${image}.${type}.fsa id=0,dest=$dev - OK"
 		[ $PRETEND -eq 1 ] || touch ${statedir}/${label}.${type}
 	fi
 
