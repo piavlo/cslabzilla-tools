@@ -380,7 +380,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 				partclone_ntfs $part ${prefix}/data/${imagename}/${name} $name $type $statedir
 			fi
 			;;
-		lvm)
+		lvm2pv)
 			lvm2disk $part $name
 			;;
 		swap)

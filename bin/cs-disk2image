@@ -275,7 +275,7 @@ for conf in $(cat $layout | sed -e 's#/dev/part#'${disk}'#' | egrep -e '^'${disk
 				echo "	Info: Skipping $type on partition $part"
 			fi
 			;;
-		lvm)
+		lvm2pv)
 			lvm2image $part $name
 			;;
 		swap)
